@@ -8,9 +8,9 @@
 我这里就简单说一下这几个文件都做了什么事情,说先说明一下我这里主要研究跟 `CocosCreator` 相关的功能,它里面还有一些关于h5的东西,感兴趣的可以了解一下.
 <!-- more -->
 
-##讲解每个文件的功能
+## 讲解每个文件的功能
 
-###TweenLite
+### TweenLite
 这个是 Tween 动画的基础库, 所有的其他更丰富的功能都是在这个基础上封装的.
 
 里面主要使用 
@@ -91,7 +91,7 @@ tl.progress(0.5).pause();
 
 > TweenLite 还有其他的几个静态函数 TweenLite.to TweenLite.from TweenLite.fromTo 用法比较的简单看文档也就可知道了.
 
-###TimelineLite
+### TimelineLite
 
 看这个名字凭字面上的意思是 时间线 也可以理解成 时间轴,看官方文档解释是他可以形成一个队列,就是说你可以组成一个动画列表一次播放.
 
@@ -134,13 +134,13 @@ tl1.append(tl2);
 
 >TimelineLite 还有其他的用 入 addLabel 等函数,看他们解释和代码例子很容易懂
 
-###TimelineMax
+### TimelineMax
 
 是对 TimelineLite 进行的扩展 主要扩展 使用 加入 repeat repeatDelay yoyo  currentLabel(), addCallback(), removeCallback(), tweenTo(), tweenFromTo(), getLabelAfter(), getLabelBefore(), getActive().
 
 如果上面额功能不能满足你们项目的需求可以再去用 TimelineMax 这个更强大额 扩展包.
 
-###TweenMax
+### TweenMax
 TweenMax 是对 TweenLite 的扩展, 也加入 repeat(), repeatDelay(), yoyo() 等等, 而且看他们未压缩的 代码 好像这个文件是可以不要依赖 其他三的,因为他把其他三个都压缩到这个文件里面了,但是相应的文件的大小也增加了,同时也集成了一些扩展插件. 你们的项目如果对 代码的大小没有太高的要求的话,你们可以去直接导入这个TweenMax.min.js 这个文件.
 
 
