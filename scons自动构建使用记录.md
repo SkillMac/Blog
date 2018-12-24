@@ -664,23 +664,478 @@ GetBuildFailures
 ```
 
 ### 从命令行控制构建流程
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch10.html)
+```python
+>>>> 如果你想使用者调用一些除了scons提供的指令,你可以这样做
+
+ARGUMENTS 这个东西将会帮到你.
+但是有个缺陷是不能存储两个值,只能 key-value 的形式.
+ARGUMENTS.get() 获取 debug 这个指令 没有用后面的默认值
+
+env = Environment()
+debug = ARGUMENTS.get('debug', 0)
+if int(debug):
+    env.Append(CCFLAGS = '-g')
+env.Program('prog.c')
+
+ej:
+scons -Q debug=0
+
+>>>> 如果你想 一对多 你可以使用这个东西
+ARGLIST
+
+cppdefines = []
+for key, value in ARGLIST:
+    if key == 'define':
+        cppdefines.append(value)
+env = Environment(CPPDEFINES = cppdefines)
+env.Object('prog.c')
+
+ej: scons -Q define=FOO define=BAR
+
+>>>> 从文件中读取用户构建配置
+>>>> 会读取 custom.py 文件的配置表
+vars = Variables('custom.py')
+vars.Add('RELEASE', 'Set to 1 to build for release', 0)
+env = Environment(variables = vars,
+                  CPPDEFINES={'RELEASE_BUILD' : '${RELEASE}'})
+env.Program(['foo.c', 'bar.c'])
+Help(vars.GenerateHelpText(env))
+
+>>>> custom.py
+>>>> RELEASE=1
+
+>>>> 可以结合 两种做法 读取用户 在命令行输入或则是配置文件
+>>>> 其中 本地配置文件会首先 覆盖 命令行 的 配置
+vars = Variables('custom.py',ARGUMENTS)
+
+>>>> 定义构造变量的函数
+>>>> Bool 可以指定的值有 true => t on all 1 true    False => f 0 no false
+
+vars = Variables('custom.py')
+vars.Add(BoolVariable('RELEASE', 'Set to build for release', 0))
+env = Environment(variables = vars,
+                  CPPDEFINES={'RELEASE_BUILD' : '${RELEASE}'})
+env.Program('foo.c')
+
+ej:
+scons -Q RELEASE=yes foo.o
+
+>>>> Enum 有个 allowed_values 的字段 定义枚举变量值
+>>>> map 字段备用映射名 map={'navy':'blue'},
+>>>> ignorecase=1 忽略 指定指令的大小写  如 COLOR=NaVy
+
+vars = Variables('custom.py')
+vars.Add(EnumVariable('COLOR', 'Set background color', 'red',
+                    allowed_values=('red', 'green', 'blue')))
+env = Environment(variables = vars,
+                  CPPDEFINES={'COLOR' : '"${COLOR}"'})
+env.Program('foo.c')
+
+ej: scons -Q COLOR=red
+
+>>>> ListVariable 允许一个字段指定多个值
+>>>> 允许使用 all 或则是 none
+
+vars = Variables('custom.py')
+vars.Add(ListVariable('COLORS', 'List of colors', 0,
+                    ['red', 'green', 'blue']))
+env = Environment(variables = vars,
+                  CPPDEFINES={'COLORS' : '"${COLORS}"'})
+env.Program('foo.c')
+
+ej: scons -Q COLORS=red,blue foo.o => cc -o foo.o -c -DCOLORS="red blue" foo.c
+ej: scons -Q COLORS=all foo.o => cc -o foo.o -c -DCOLORS="red green blue" foo.c
+ej: scons -Q COLORS=none foo.o => cc -o foo.o -c -DCOLORS="" foo.c
+
+>>>> PathVariable 路径变量
+>>>> 提供输入的路径是文件 PathVariable.PathIsFile
+>>>> 是目录 PathVariable.PathIsDir
+>>>> 目录不存在,并创建 PathVariable.PathIsDirCreate
+>>>> 不关心上面的三点 PathVariable.PathAccept
+
+ej:
+vars = Variables('custom.py')
+vars.Add(PathVariable('CONFIG',
+                    'Path to configuration file',
+                    '/etc/my_config',
+                    PathVariable.PathIsFile))
+env = Environment(variables = vars,
+                  CPPDEFINES={'CONFIG_FILE' : '"$CONFIG"'})
+env.Program('foo.c')
+
+>>>> PackageVariable
+>>>> 启用或禁止 路径名字 没有太懂
+vars = Variables('custom.py')
+vars.Add(PackageVariable('PACKAGE',
+                       'Location package',
+                       '/opt/location'))
+env = Environment(variables = vars,
+                  CPPDEFINES={'PACKAGE' : '"$PACKAGE"'})
+env.Program('foo.c')
+
+ej:
+% scons -Q foo.o
+cc -o foo.o -c -DPACKAGE="/opt/location" foo.c
+% scons -Q PACKAGE=/usr/local/location foo.o
+cc -o foo.o -c -DPACKAGE="/usr/local/location" foo.c
+% scons -Q PACKAGE=yes foo.o
+cc -o foo.o -c -DPACKAGE="True" foo.c
+% scons -Q PACKAGE=no foo.o
+cc -o foo.o -c -DPACKAGE="False" foo.c
+
+>>>> AddVariables 一次性添加多个变量功能
+
+vars = Variables()
+vars.AddVariables(
+    ('RELEASE', 'Set to 1 to build for release', 0),
+    ('CONFIG', 'Configuration file', '/etc/my_config'),
+    BoolVariable('warnings', 'compilation with -Wall and similiar', 1),
+    EnumVariable('debug', 'debug output and symbols', 'no',
+               allowed_values=('yes', 'no', 'full'),
+               map={}, ignorecase=0),  # case sensitive
+    ListVariable('shared',
+               'libraries to build as shared libraries',
+               'all',
+               names = list_of_libs),
+    PackageVariable('x11',
+                  'use X11 installed here (yes = search some places)',
+                  'yes'),
+    PathVariable('qtdir', 'where the root of Qt is installed', qtdir),
+)
+
+>>>> UnknownVariables 在用户使用了未定义的 指令时 你可以警告调用者 拼写错误 并退出程序
+
+vars = Variables(None)
+vars.Add('RELEASE', 'Set to 1 to build for release', 0)
+env = Environment(variables = vars,
+                  CPPDEFINES={'RELEASE_BUILD' : '${RELEASE}'})
+unknown = vars.UnknownVariables()
+if unknown:
+    print("Unknown variables: %s"%unknown.keys())
+    Exit(1)
+env.Program('foo.c')
+
+>>>> 你可以在用户使用某个命令的时候 提醒用户一些操作
+if 'bar' in COMMAND_LINE_TARGETS:
+    print("Don't forget to copy `bar' to the archive!")
+Default(Program('foo.c'))
+Program('bar.c')
+
+ej:
+% scons -Q bar
+Don't forget to copy `bar' to the archive!
+
+>>>> Default() 用户没有指定构建是 可以使用 这个函数 默认 构建一个程序
+env = Environment()
+hello = env.Program('hello.c')
+env.Program('goodbye.c')
+Default(hello)
+
+ej:
+    % scons -Q
+    cc -o hello.o -c hello.c
+    cc -o hello hello.o
+    % scons -Q
+    scons: `hello' is up to date.
+    % scons -Q goodbye
+    cc -o goodbye.o -c goodbye.c
+    cc -o goodbye goodbye.o
+Default 跟过用法 [传送门](https://scons.org/doc/production/HTML/scons-user/ch10s03.html)
+
+>>>> DEFAULT_TARGETS 主要是迎合上面 Default 函数, 看一下例子应该很容易理解
+prog1 = Program('prog1.c')
+Default(prog1)
+print("DEFAULT_TARGETS is %s"%map(str, DEFAULT_TARGETS))
+
+ej:
+% scons
+scons: Reading SConscript files ...
+DEFAULT_TARGETS is ['prog1']
+scons: done reading SConscript files.
+scons: Building targets ...
+cc -o prog1.o -c prog1.c
+cc -o prog1 prog1.o
+scons: done building targets.
+
+>>>> BUILD_TARGETS
+prog1 = Program('prog1.c')
+Program('prog2.c')
+Default(prog1)
+print ("BUILD_TARGETS is %s"%map(str, BUILD_TARGETS))
+
+ej:
+% scons -Q
+BUILD_TARGETS is ['prog1']
+cc -o prog1.o -c prog1.c
+cc -o prog1 prog1.o
+% scons -Q prog2
+BUILD_TARGETS is ['prog2']
+cc -o prog2.o -c prog2.c
+cc -o prog2 prog2.o
+% scons -Q -c .
+BUILD_TARGETS is ['.']
+Removed prog1.o
+Removed prog1
+Removed prog2.o
+Removed prog2
+
+>>>> 产生帮助文档(help)
+vars = Variables(None, ARGUMENTS)
+vars.Add('RELEASE', 'Set to 1 to build for release', 0)
+env = Environment(variables = vars)
+Help(vars.GenerateHelpText(env))
+```
 
 ### InstallBuilder 安装构建的可执行程序
+安装暂时没有 显示功能上需求就不做详细叙述了
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch11.html)
 
 ### 与平台无关的文件操作
+scons 封装了 与平台无关的文件操作
+如: 拷贝(copy),移动(move),移除(delete),创建(touch),创建目录(mkdir),执行(execute)
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch12.html)WWW
 
 ### 控制构建目标的移除
+```python
+>>>> 有的时候你想要在每次构建一个东西的时候,不清除上一次的构建,而是以增量的方式构建
+>>>> Precious
+env = Environment(RANLIBCOM='')
+lib = env.Library('foo', ['f1.c', 'f2.c', 'f3.c'])
+env.Precious(lib)
 
-### 分层构建
+>>>> 有的时候你可能使用 scons -c 但是这个命令会将所有的构建产物都移除掉,你可以使用这个命令,保证有些东西不被 -c 指令 给移除掉
+>>>> NoClean
+env = Environment(RANLIBCOM='')
+lib = env.Library('foo', ['f1.c', 'f2.c', 'f3.c'])
+env.NoClean(lib)
 
+>>>> Clean 有的时候你可能 清楚自己在产生过程中生成的 自定义文件 你可以这样做
+t = Command('foo.out', 'foo.in', 'build -o $TARGET $SOURCE')
+Clean(t, 'foo.log')
+
+ej:
+% scons -Q
+build -o foo.out foo.in
+% scons -Q -c
+Removed foo.out
+Removed foo.log
+
+
+```
+### 分级构建
+分级构建,就是你的源文件可能不是一个目录,需要多一个目录构建.
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch14.html)
+```python
+>>>> SConscript 根目录调用每个子目录的 构建脚本, 通常子目录的构建脚本叫 SConscript 这是官方的解释
+SConscript(['drivers/display/SConscript',
+            'drivers/mouse/SConscript',
+            'parser/SConscript',
+            'utilities/SConscript'])
+
+>>>> 通常里面的路径都是相对于当前这个构建脚本 如果你先让子构建脚本 使用顶级目录你可以这样做 加上 '#' 这个符号
+env = Environment()
+env.Program('prog', ['main.c', '#lib/foo1.c', 'foo2.c'])
+
+>>>> 当然你也可以直接使用绝对路径 不需要加任何符号
+>>>> 
+>>>> 你可以在多个构建脚本共享变量 你可以使用 Export Import 这两个方法
+
+ej:
+env = Environment()
+Export(env)
+
+or:
+env = Environment()
+debug = 10
+Export(env, debug)
+
+or:
+Export('env debug')
+
+or:
+SConscript('src/SConscript', 'env')
+
+or:
+SConscript('src/SConscript', exports='env')
+
+ej:
+Import(env)
+
+Import(env, debug)
+
+Import('env debug')
+
+Import('*')
+
+>>>> 有事你需要 从两个此目录返回结果 构建出一个对象
+env = Environment()
+Export('env')
+objs = []
+for subdir in ['foo', 'bar']:
+    o = SConscript('%s/SConscript' % subdir)
+    objs.append(o)
+env.Library('prog', objs)
+
+other Sconstruct(其他构建脚本):
+    Import('env')
+    obj = env.Object('foo.c')
+    Return('obj')
+
+>>>> 
+```
 ### 分离构建 目标 和 源文件
+分离构建结果
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch15.html)
+```python
+方式1:
+主要是利用这个字段 variant_dir
+SConscript('src/SConscript', variant_dir='build')
+
+禁掉在输出目录拷贝源文件
+SConscript（'src / SConscript'，variant_dir ='build'，duplicate = 0）
+方式2:
+VariantDir('build', 'src', duplicate=0)
+env = Environment()
+env.Program('build/hello.c')
+
+子脚本
+VariantDir('build', 'src')
+SConscript('build/SConscript')
+```
 
 ### 变体构建
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch16.html)
+同一个目录构建不同的目标产物(可执行程序)
+```python
+platform = ARGUMENTS.get('OS', Platform())
+
+include = "#export/$PLATFORM/include"
+lib = "#export/$PLATFORM/lib"
+bin = "#export/$PLATFORM/bin"
+
+env = Environment(PLATFORM = platform,
+                  BINDIR = bin,
+                  INCDIR = include,
+                  LIBDIR = lib,
+                  CPPPATH = [include],
+                  LIBPATH = [lib],
+                  LIBS = 'world')
+
+Export('env')
+
+env.SConscript('src/SConscript', variant_dir='build/$PLATFORM')
+```
+
 
 ### 国际化
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch17.html)
 
 ### 编写自己的 builder(构造器)
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch18.html)
+```python
+>>>> 创建构造器
+env = Environment()
+bld = Builder(action = 'foobuild < $SOURCE > $TARGET')
+env.Append(BUILDERS = {'Foo' : bld})
+env.Foo('file.foo', 'file.input')
+env.Program('hello.c')
 
+or:
+env = Environment()
+bld = Builder(action = 'foobuild < $SOURCE > $TARGET')
+env['BUILDERS']['Foo'] = bld
+env.Foo('file.foo', 'file.input')
+env.Program('hello.c')
+
+>>>> 指定构建的文件后缀 和 输出文件的后缀
+bld = Builder(action = 'foobuild < $SOURCE > $TARGET',
+              suffix = '.foo',
+              src_suffix = '.input')
+env = Environment(BUILDERS = {'Foo' : bld})
+env.Foo('file1')
+env.Foo('file2')
+
+>>>> 构建是调用 python 命令 
+target:
+A list of Node objects representing the target or targets to be built by this builder function. The file names of these target(s) may be extracted using the Python str function.
+(是一个目标节点列表,可通过 str 的方法 解析里面的内容)
+source:
+A list of Node objects representing the sources to be used by this builder function to build the targets. The file names of these source(s) may be extracted using the Python str function.
+(是一个源节点列表,可通过 str 的方法 解析里面的内容)
+env:
+The construction environment used for building the target(s). The builder function may use any of the environment's construction variables in any way to affect how it builds the targets.
+(这个构造变量被用在 目标节点上, 这个构造器可能使用任意的构造环境中的构造变量以任意的方式去影响如何构建目标节点)
+(这个解释可能有点绕,其实还是挺容易懂得,不是吗?)
+
+>>>> 自定义构建函数 上面是三个参数的解释, 很详细.
+def build_function(target, source, env):
+    # Code to build "target" from "source"
+    return None
+bld = Builder(action = build_function,
+              suffix = '.foo',
+              src_suffix = '.input')
+env = Environment(BUILDERS = {'Foo' : bld})
+env.Foo('file')
+
+>>>> Generator 产生一条记录信息
+def generate_actions(source, target, env, for_signature):
+    return 'foobuild < %s > %s' % (source[0], target[0])
+bld = Builder(generator = generate_actions,
+              suffix = '.foo',
+              src_suffix = '.input')
+env = Environment(BUILDERS = {'Foo' : bld})
+env.Foo('file')
+
+>>>> Builders That Modify the Target or Source Lists Using an Emitter
+(修改目标节点或者是 源节点 通过发射器)
+bld = Builder(action = 'my_command $SOURCES > $TARGET',
+              suffix = '.foo',
+              src_suffix = '.input',
+              emitter = '$MY_EMITTER')
+def modify1(target, source, env):
+    return target, source + ['modify1.in']
+def modify2(target, source, env):
+    return target, source + ['modify2.in']
+env1 = Environment(BUILDERS = {'Foo' : bld},
+                   MY_EMITTER = modify1)
+env2 = Environment(BUILDERS = {'Foo' : bld},
+                   MY_EMITTER = modify2)
+env1.Foo('file1')
+env2.Foo('file2')
+
+>>>> 放置自定义工具或者是 构造器
+>>>> scons 会自动加载 site_scons/site_init.py 比任意一个 构建脚本都早
+>>>> site_scons/site_tools 在顶级的构建脚本是最后执行的 它覆盖其他的构建脚本定义
+>>>> 
+site_scons/site_init.py
+
+def TOOL_ADD_HEADER(env):
+   """A Tool to add a header from $HEADER to the source file"""
+   add_header = Builder(action=['echo "$HEADER" > $TARGET',
+                                'cat $SOURCE >> $TARGET'])
+   env.Append(BUILDERS = {'AddHeader' : add_header})
+   env['HEADER'] = '' # set default value
+
+SConstruct
+# Use TOOL_ADD_HEADER from site_scons/site_init.py
+env=Environment(tools=['default', TOOL_ADD_HEADER], HEADER="=====")
+env.AddHeader('tgt', 'src')
+
+site_scons/my_utils.py
+
+from SCons.Script import *   # for Execute and Mkdir
+def build_id():
+   """Return a build ID (stub version)"""
+   return "100"
+def MakeWorkDir(workdir):
+   """Create the specified dir immediately"""
+   Execute(Mkdir(workdir))
+
+import my_utils
+print("build_id=" + my_utils.build_id())
+my_utils.MakeWorkDir('/tmp/work')
+```
 ### 缓存构建的文件
 
 ### 验证 python scons 版本
