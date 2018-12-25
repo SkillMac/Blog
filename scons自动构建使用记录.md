@@ -1137,18 +1137,64 @@ print("build_id=" + my_utils.build_id())
 my_utils.MakeWorkDir('/tmp/work')
 ```
 ### 缓存构建的文件
+缓存构建文件其实就是将构建出来的中间产物给放到一个缓存目录里面,如果目录文件不存,就直接构建中间产物,在其下次构建是,就不必再次构建它,提高构建效率.
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch24.html)
+
+```python
+>>>> 主要使用 CacheDir('./cache')
+>>>> scons -Q  --cache-show  保持每次构建的显示命令都是一样, 不使用这个字段会出现如果在在缓存里面存在,就和没有时的输出不一样,问题.
+ej:
+    % scons -Q
+    cc -o hello.o -c hello.c
+    cc -o hello hello.o
+    % scons -Q -c
+    Removed hello.o
+    Removed hello
+    % scons -Q --cache-show
+    cc -o hello.o -c hello.c
+    cc -o hello hello.o
+
+>>>> NoCache() 指定某些中间产物,不放入缓存
+ej:
+    env = Environment()
+    obj = env.Object('hello.c')
+    env.Program('hello.c')
+    CacheDir('cache')
+    NoCache('hello.o')
+
+>>>> scons -Q --cache-disable 通过命令行禁掉 缓存
+>>>> scons -Q --cache-force 强制更新缓存
+>>>> scons -Q --random 随机缓存 或者是使用构建脚本设置 SetOption('random', 1)
+-- random 主要是面对多个程序通同时构建的情况. 让他的构建库的顺序尽量不一致,最小化减少缓存.
+```
 
 ### 验证 python scons 版本
+EnsurePythonVersion(2, 5) 验证 python 版本 如果低于构建结束
+EnsureSConsVersion(1, 0) 验证 scons 版本
 
 ### 别名目标
-
-### 多平台配置（Autoconf功能）
+别名也没啥说的
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch25.html)
+```python
+env = Environment()
+hello = env.Program('hello.c')
+env.Install('/usr/bin', hello)
+env.Alias('install', '/usr/bin')
+```
+### 多平台配置（Autoconf功能
+主要是检查某些依赖的文件是否存在等等.
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch23.html)
 
 ### 从代码存储库构建
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch22.html)
 
 ### 编写扫描仪
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch21.html)
 
 ### Not Writing a Builder: the Command Builder
+主要是自定义写构造器的简化版本
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch19.html)
 
 ### Pseudo-Builders: the AddMethod function(伪造构建起, 添加方法)
-
+这个东西个自定义工具差不多
+[传送门](https://scons.org/doc/production/HTML/scons-user/ch20.html)
