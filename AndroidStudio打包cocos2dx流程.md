@@ -64,7 +64,7 @@ android sdk android studio 自带有下载的管理器
 >maven { url 'http://maven.aliyun.com/nexus/content/groups/public' }
 
 我这个下面有截图
-{% asset_img 1.png build.gradle 配置}
+{% asset_img 1.png build.gradle 配置%}
 
 ---
 
