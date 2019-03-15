@@ -1,0 +1,482 @@
+const renderer = cc.renderer.renderEngine.renderer;
+const PARAMTYPE = {
+    i: renderer.PARAM_INT,
+    i2: renderer.PARAM_INT2,
+    i3: renderer.PARAM_INT3,
+    i4: renderer.PARAM_INT4,
+
+    f : renderer.PARAM_FLOAT,
+    f2 : renderer.PARAM_FLOAT2,
+    f3 : renderer.PARAM_FLOAT3,
+    f4 : renderer.PARAM_FLOAT4,
+
+    mat2: renderer.PARAM_MAT2,
+    mat3: renderer.PARAM_MAT3,
+    mat4: renderer.PARAM_MAT4,
+
+    tex2d: renderer.PARAM_TEXTURE_2D,
+    texCube: renderer.PARAM_TEXTURE_CUBE,
+}
+
+var ShaderLib = {
+    _shaders: {},
+
+    // 增加一个新的Shader
+    addShader: function(shader) {
+        if (this._shaders[shader.name]) {
+            console.error("addShader - shader already exist: ", shader.name);
+            return;
+        }
+        cc.renderer._forward._programLib.define(shader.name, shader.vert, shader.frag, shader.defines);
+        this._shaders[shader.name] = shader;
+    },
+
+    // 取Shader的定义
+    getShader: function(name) {
+        return this._shaders[name];
+    }
+}
+
+var SpriteHook = {
+}
+
+SpriteHook.init = function() {
+    // 支持自定义Shader
+    const renderEngine = cc.renderer.renderEngine;
+    const SpriteMaterial = renderEngine.SpriteMaterial;
+    const GraySpriteMaterial = renderEngine.GraySpriteMaterial;
+    const STATE_CUSTOM = 101;
+
+    // 取自定义材质
+    cc.Sprite.prototype.getMaterial = function(name) {
+        if (this._materials) {
+            return this._materials[name];
+        } else {
+            return undefined;
+        }
+    }
+
+    // 设置自定义材质
+    cc.Sprite.prototype.setMaterial = function(name, mat) {
+        if (!this._materials) {
+            this._materials = {}
+        }
+        this._materials[name] = mat;
+    }
+
+    // 激活某个材质
+    cc.Sprite.prototype.activateMaterial = function(name) {
+        var mat = this.getMaterial(name);
+        if (mat && mat !== this._currMaterial) {
+            if (mat) {
+                if (this.node) {
+                    mat.color = this.node.color;
+                }
+                if (this.spriteFrame) {
+                    mat.texture = this.spriteFrame.getTexture();
+                }
+                this.node._renderFlag |= cc.RenderFlow.FLAG_COLOR;
+                this._currMaterial = mat;
+                this._currMaterial.name = name;
+                this._state = STATE_CUSTOM;
+                this._activateMaterial();
+            } else {
+                console.error("activateMaterial - unknwon material: ", name);
+            }
+        }
+    }
+
+    // 取当前的材质
+    cc.Sprite.prototype.getCurrMaterial = function() {
+        if (this._state === STATE_CUSTOM) {
+            return this._currMaterial;
+        }
+    }
+
+    cc.Sprite.prototype._activateMaterial = function() {
+        let spriteFrame = this._spriteFrame;
+
+        // WebGL
+        if (cc.game.renderType !== cc.game.RENDER_TYPE_CANVAS) {
+            // Get material
+            let material;
+            if (this._state === cc.Sprite.State.GRAY) {
+                if (!this._graySpriteMaterial) {
+                    this._graySpriteMaterial = new GraySpriteMaterial();
+                    this.node._renderFlag |= cc.RenderFlow.FLAG_COLOR;
+                }
+                material = this._graySpriteMaterial;
+                this._currMaterial = null;
+            }
+            else if (this._state === STATE_CUSTOM) {
+                if (!this._currMaterial) {
+                    console.error("_activateMaterial: _currMaterial undefined!")
+                    return;
+                }
+                material = this._currMaterial;
+            }
+            else {
+                if (!this._spriteMaterial) {
+                    this._spriteMaterial = new SpriteMaterial();
+                    this.node._renderFlag |= cc.RenderFlow.FLAG_COLOR;
+                }
+                material = this._spriteMaterial;
+                this._currMaterial = null;
+            }
+            // Set texture
+            if (spriteFrame && spriteFrame.textureLoaded()) {
+                let texture = spriteFrame.getTexture();
+                if (material.texture !== texture) {
+                    material.texture = texture;
+                    this._updateMaterial(material);
+                }
+                else if (material !== this._material) {
+                    this._updateMaterial(material);
+                }
+                if (this._renderData) {
+                    this._renderData.material = material;
+                }
+                this.markForUpdateRenderData(true);
+                this.markForRender(true);
+            }
+            else {
+                this.disableRender();
+            }
+        }
+    }
+}
+
+/**
+ * 自定义材质
+ */
+
+const renderEngine = cc.renderer.renderEngine;
+const gfx = renderEngine.gfx;
+const Material = renderEngine.Material;
+
+var CustomMaterial = (function (Material$$1) {
+	function CustomMaterial(shaderName, params, defines, passList) {
+		Material$$1.call(this, false);
+		var pass;
+		if(!passList) {
+			pass = new renderer.Pass(shaderName);
+			pass.setDepth(false, false);
+			pass.setCullMode(gfx.CULL_NONE);
+			pass.setBlend(
+				gfx.BLEND_FUNC_ADD,
+				gfx.BLEND_SRC_ALPHA, gfx.BLEND_ONE_MINUS_SRC_ALPHA,
+				gfx.BLEND_FUNC_ADD,
+				gfx.BLEND_SRC_ALPHA, gfx.BLEND_ONE_MINUS_SRC_ALPHA
+			);
+		}
+		
+		var techParams = [
+			{ name: 'texture', type: renderer.PARAM_TEXTURE_2D },
+			{ name: 'color', type: renderer.PARAM_COLOR4 }
+		];
+		if (params) {
+			techParams = techParams.concat(params);
+		}
+		var mainTech = new renderer.Technique(
+			['transparent'],
+			techParams,
+			passList ? passList : [pass],
+		);
+		this.name = shaderName;
+		this._color = { r: 1, g: 1, b: 1, a: 1 };
+		this._effect = new renderer.Effect(
+			[
+				mainTech
+			],
+			{},
+			defines,
+		);
+
+		this._mainTech = mainTech;
+		this._texture = null;
+	}
+
+	if (Material$$1) CustomMaterial.__proto__ = Material$$1;
+	CustomMaterial.prototype = Object.create(Material$$1 && Material$$1.prototype);
+	CustomMaterial.prototype.constructor = CustomMaterial;
+
+	var prototypeAccessors = { effect: { configurable: true }, texture: { configurable: true }, color: { configurable: true } };
+
+	prototypeAccessors.effect.get = function () {
+		return this._effect;
+	};
+
+	prototypeAccessors.texture.get = function () {
+		return this._texture;
+	};
+
+	prototypeAccessors.texture.set = function (val) {
+		if (this._texture !== val) {
+			this._texture = val;
+			this._effect.setProperty('texture', val.getImpl());
+			this._texIds['texture'] = val.getId();
+		}
+	};
+
+	prototypeAccessors.color.get = function () {
+		return this._color;
+	};
+
+	prototypeAccessors.color.set = function (val) {
+		var color = this._color;
+		color.r = val.r / 255;
+		color.g = val.g / 255;
+		color.b = val.b / 255;
+		color.a = val.a / 255;
+		this._effect.setProperty('color', color);
+	};
+
+	CustomMaterial.prototype.clone = function clone() {
+		var copy = new CustomMaterial();
+		copy.texture = this.texture;
+		copy.color = this.color;
+		copy.updateHash();
+		return copy;
+	};
+
+	// 设置自定义参数的值
+	CustomMaterial.prototype.setParamValue = function (name, value) {
+		this._effect.setProperty(name, value);
+	};
+
+	// 设置定义值
+	CustomMaterial.prototype.setDefine = function (name, value) {
+		this._effect.define(name, value);
+	};
+
+	Object.defineProperties(CustomMaterial.prototype, prototypeAccessors);
+
+	return CustomMaterial;
+}(Material));
+
+
+let typeEnum = cc.Enum({
+    Wave: 0,
+    Mosaic: 1,
+    Flash: 2,
+    Water: 3,
+    Vortex: 4,
+    Move: 5,
+});
+
+let shaderNameMapping = {
+    1: "Wave",
+    2: "Mosaic",
+    3: "Flash",
+    4: "Water",
+    5: "Vortex",
+    // 6: "WaterWave",
+    6: "Move",
+}
+
+cc.Class({
+    extends: cc.Component,
+
+    properties: {
+        effect: {
+            type: typeEnum,
+            default: typeEnum.Wave,
+        },
+    },
+
+    editor: {
+        requireComponent: cc.Sprite,
+    },
+
+    onLoad() {
+        SpriteHook.init();
+        this.initData();
+        this.initShaders();
+        this.sp = this.node.getComponent(cc.Sprite);
+
+        this._shaderNameFuncMapping[this.effect]();
+    },
+
+    initData() {
+        this._time = 0;
+
+        // Flash
+        this._sin = 0;
+
+        // Vortex
+        this._angle = 0;
+        this._radius = 0.1;
+
+        window._InitShaderSource = window._InitShaderSource || false
+        if(!_InitShaderSource) {
+            this._shaderNameFuncMapping = [
+                this.waveShader.bind(this),
+                this.mosaicShader.bind(this),
+                this.flashShader.bind(this),
+                this.waterShader.bind(this),
+                this.vortexShader.bind(this),
+                this.moveShader.bind(this),
+            ]
+        };
+    },
+
+    initShaders() {
+        ShaderLib.addShader(require("Flash"));
+        ShaderLib.addShader(require("Mosaic"));
+        ShaderLib.addShader(require("Wave"));
+        ShaderLib.addShader(require("Water"));
+        ShaderLib.addShader(require("Vortex"));
+        // ShaderLib.addShader(require("WaterWave"));
+        ShaderLib.addShader(require("Move"));
+    },
+
+    useShader(name, materialOptions) {
+        let material = this.sp.getMaterial(name);
+        if(!material) {
+            // var CustomMaterial = require("CustomMaterial");
+            material = new CustomMaterial(name,materialOptions[0],materialOptions[1]);
+            this.sp.setMaterial(name, material);
+        }
+
+        this.sp.activateMaterial(name);
+        return material;
+    },
+
+    mosaicShader() {
+        let material = this.useShader('Mosaic', [
+            [
+                {name: 'imageSize', type: PARAMTYPE.f3},
+                {name: 'mosaicSize', type: PARAMTYPE.f},
+            ]
+        ]);
+
+        var iResolution = new cc.Vec3(this.sp.node.width, this.sp.node.height, 0);
+        material.setParamValue("imageSize", iResolution);
+        material.setParamValue("mosaicSize", 16); 
+    },
+
+    flashShader() {
+        let name = 'Flash';
+        let material = this.sp.getMaterial(name);
+        if(!material) {
+            // var CustomMaterial = require("CustomMaterial");
+            material = new CustomMaterial(name,[
+                {name: 'run_time', type: PARAMTYPE.f}
+            ]);
+            this.sp.setMaterial(name, material);
+        }
+
+        this.sp.activateMaterial(name);
+    },
+
+    waveShader() {
+        console.log(this)
+        let material = this.useShader('Wave', [
+            [
+                {name: 'offsetXY', type: PARAMTYPE.f2},
+                {name: 'run_time', type: PARAMTYPE.f},
+                {name: 'speed', type: PARAMTYPE.f}
+            ]
+        ]);
+        material.setParamValue('offsetXY', new cc.Vec2(1.0,0.0));
+        material.setParamValue('speed', 3);
+    },
+
+    waterShader() {
+        let material = this.useShader('Water', [
+            [
+                {name: 'imageSize', type: PARAMTYPE.f3},
+                {name: 'run_time', type: PARAMTYPE.f},
+            ]
+        ]);
+        var iResolution = new cc.Vec3(this.sp.node.width, this.sp.node.height, 0);
+        material.setParamValue("imageSize", iResolution);
+    },
+
+    vortexShader() {
+        let material = this.useShader('Vortex', [
+            [
+                {name: '_Radius', type: PARAMTYPE.f},
+                {name: '_Angle', type: PARAMTYPE.f},
+            ]
+        ]);
+    },
+
+    moveShader() {
+        let material = this.useShader('Move', [
+            [
+                {name: 'run_time', type: PARAMTYPE.f},
+            ]
+        ]);
+    },
+
+    update(dt) {
+        this._time += dt;
+        
+        
+
+        if(this.effect == typeEnum.Flash) {
+            // Flash
+            this._sin = Math.sin(this._time);
+            if(this._sin > 0.99) {
+                this._sin = 0;
+                this._time = 0;
+            }
+            const material = this.sp.getCurrMaterial('Flash');
+            if(!material) {
+                return;
+            }
+            material.setParamValue('run_time', this._sin);
+        } else if(this.effect == typeEnum.Wave) {
+            // Wave
+            const material = this.sp.getCurrMaterial('Wave');
+            if(!material) {
+                return;
+            }
+            material.setParamValue('run_time', this._time);
+        } else if(this.effect == typeEnum.Water) {
+            // Water
+            const material = this.sp.getCurrMaterial('Water');
+            if(!material) {
+                return;
+            }
+            material.setParamValue('run_time', this._time);
+        } else if(this.effect == typeEnum.Vortex) {
+            // Vortex
+            this._angle += 0.03;
+            this._radius += 0.003;
+
+            if(this._angle >= 5) {
+                this._angle = 0;
+                this._radius = 0.1;
+                
+            }
+            const material = this.sp.getCurrMaterial('Vortex');
+            if(!material) {
+                return;
+            }
+            material.setParamValue('_Radius',this._radius);
+            material.setParamValue('_Angle',this._angle);
+        }/* else if(this.effect == typeEnum.WaterWave) {
+            // WaterWave
+            if(this._time >= 3.14) {
+                this._time = 0;
+            }
+            const material = this.sp.getCurrMaterial('WaterWave');
+            if(!material) {
+                return;
+            }
+            material.setParamValue('run_time', this._time);
+        } */
+        else if(this.effect == typeEnum.Move) {
+            this._moveTime = this._time;
+            this._moveTime %= 3.35;
+            const material = this.sp.getCurrMaterial('Move');
+            if(!material) {
+                return;
+            }
+            material.setParamValue('run_time', this._moveTime);
+        }
+        
+    }
+});
