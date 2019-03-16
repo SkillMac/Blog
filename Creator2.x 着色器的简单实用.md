@@ -669,6 +669,8 @@ var shader = {
 }
 ```
 
+> 还有一个简单的置灰效果没有写，这个因为Creator Engine 自带，所以就没有写。可以看一下`Sprite` 这个组件的API官方应该介绍的有， 置灰其实 rgb×0.3 就差不多了。
+
 # 将所有的 逻辑整合到一个脚本里面 ShaderComponent
 
 {% asset_link ShaderComponent.txt %}
@@ -676,3 +678,7 @@ var shader = {
 > 这里面会去 require 那几个着色器 你们自己将上面自定义的着色器代码 创建出来.
 
 # 这么做会带来的一些问题
+1.精灵运行渐变的Action 就会没有效果 因为这里只是采样纹理的颜色并做出一定的变换并没有融合节点本身的颜色值，如果想做透明变换，你可以给着色器传递值
+2.在手机上可能会因为精度问题导致，渲染有问题， 你可以采取高精度的类型 如： #ifdef GL_ES highp float xx; #enif  还 中等精度 mediump lowp
+
+如果有其他问题或则是意见可以加我QQ讨论。
